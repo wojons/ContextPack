@@ -1,0 +1,42 @@
+# .clinerules for Zip-to-Context Tool Project
+
+## Project Goal & Scope
+- Objective: Create a client-side only web tool (HTML/CSS/JS) to read a ZIP file, concatenate file contents (with paths), and display the result for LLM context.
+- CRITICAL: No backend code. All processing must happen in the browser.
+- Output: Single HTML file containing embedded CSS and JS, or clearly separated blocks.
+
+## Technology Stack & Libraries
+- Frontend: HTML5, CSS3, Modern JavaScript (ES6+ including async/await).
+- REQUIRED Library: JSZip for client-side ZIP decompression. Use a reliable CDN link if not bundling.
+- NO Server-Side: Do not include any Node.js, Python, PHP, or other backend code. No server dependencies.
+
+## Core Functionality Requirements
+- File Input: Must accept `.zip` files only.
+- Unzipping: Use JSZip library functions correctly.
+- File Iteration: Process all files within the archive.
+- Text vs. Binary Handling:
+    - Implement logic to distinguish text files (based on common extensions like .txt, .js, .py, .html, .css, .md, .json, .xml etc.) from binary files.
+    - Include a checkbox (`id="includeBinary"`) for non-text files.
+    - If checkbox is checked, Base64 encode binary files.
+    - If checkbox is unchecked, skip binary files.
+- Output Concatenation:
+    - Strictly follow the format:
+      ```
+      File: [Full Path]
+      -----------------
+      [Content or Base64 String]
+      -----------------
+
+      ```
+    - Ensure two newlines between file entries.
+
+## User Interface (UI) Elements & Behavior
+- Required Elements: File input, "Include non-text files" checkbox, read-only output textarea, "Copy to Clipboard" button, status/error message area.
+- Error Handling: Display user-friendly messages for invalid file uploads, ZIP read errors, etc., in the designated status area.
+- Status Updates: Provide feedback like "Processing...", "Done!".
+- Copy Button: Must copy the full content of the output textarea.
+
+## Security & Constraints
+- Client-Side Only: Reiterate that no data should be sent to any server.
+- Library Source: Prefer using a standard CDN for JSZip unless specifically instructed to bundle.
+- Performance: While not a strict rule, aim for reasonably efficient JS for handling potentially large text content in the browser. (This is more of a guideline).

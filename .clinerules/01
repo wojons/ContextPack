@@ -1,0 +1,35 @@
+# .clinerules for Zip-OR-Folder-to-Context Tool Project
+
+## Project Goal & Scope
+- Objective: Create a client-side only web tool (HTML/CSS/JS) to read EITHER a ZIP file OR a user-selected Folder, concatenate file contents (with paths), and display the result for LLM context.
+- CRITICAL: No backend code. All processing must happen in the browser.
+- Output: Single HTML file containing embedded CSS and JS, or clearly separated blocks.
+
+## Technology Stack & Libraries
+- Frontend: HTML5 (using `webkitdirectory` for folder input), CSS3, Modern JavaScript (ES6+ including async/await, FileReader API).
+- REQUIRED Library: JSZip for client-side ZIP decompression.
+- NO Server-Side: Do not include any backend code or dependencies.
+
+## Core Functionality Requirements
+- Input Handling: Must support both ZIP file input (`accept=".zip"`) AND Folder input (`webkitdirectory`). Handle logic based on which input was used.
+- ZIP Processing: Use JSZip library correctly.
+- Folder Processing: Iterate through `FileList`, use `file.webkitRelativePath` for paths. Use `FileReader` to read file content.
+- Text vs. Binary Handling:
+    - Implement logic to distinguish text files from binary files.
+    - Include a single shared checkbox (`id="includeBinary"`) for non-text files.
+    - Base64 encode binary files if checkbox is checked; skip if unchecked.
+- Output Concatenation:
+    - Strictly follow the format:
+      ```
+      File: [Full Path]
+      -----------------
+      [Content or Base64 String]
+      -----------------
+
+      ```
+    - Ensure correct relative path is used for both ZIP and Folder inputs.
+
+## User Interface (UI) Elements & Behavior
+- Required Elements: Separate inputs/buttons for ZIP vs Folder, "Include non-text files" checkbox, read-only output textarea, "Copy to Clipboard" button, status/error message area.
+- Error Handling: Display user-friendly messages for errors (invalid zip, read errors).
+- Status Updates: Provide feedback like "Processing...", "Done!".

@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ContextPack | Zip/Folder to LLM Context Helper</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Use ContextPack to easily convert codebases from ZIP files or folders into a single text block for providing context to Large Language Models (LLMs) and AI coding assistants. Client-side processing.">
+  <!-- JSZip CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    :root {
+      --primary: #1976d2;
+      --primary-dark: #125ea2;
+      --background: #f8f9fa;
+      --surface: #fff;
+      --border: #ccc;
+      --error: #b00020;
+      --font-mono: 'Fira Mono', 'Consolas', monospace;
+      --font-sans: system-ui, sans-serif;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--background);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      color: #222;
+    }
+    header {
+      background: var(--primary);
+      color: #fff;
+      padding: 2rem 0 1rem 0;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    header h1 {
+      margin: 0;
+      font-size: 2.1rem;
+      letter-spacing: 0.01em;
+    }
+    main {
+      max-width: 820px;
+      margin: 2.5rem auto 2rem auto;
+      background: var(--surface);
+      border-radius: 10px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+      padding: 2.2rem 2.5rem 2.5rem 2.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2.2rem;
+    }
+    section#intro {
+      margin-bottom: 0.5rem;
+    }
+    section#intro h2 {
+      font-size: 1.25rem;
+      margin-top: 0.5em;
+      margin-bottom: 0.3em;
+      color: var(--primary-dark);
+    }
+    section#intro ul {
+      margin: 0.5em 0 1em 1.5em;
+      padding: 0;
+    }
+    section#intro li {
+      margin-bottom: 0.3em;
+    }
+    section#tool-interface {
+      background: #f4f7fb;
+      border-radius: 8px;
+      padding: 1.5rem 1.2rem 1.2rem 1.2rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 1.5em;
+      flex-wrap: wrap;
+      margin-bottom: 0.2em;
+    }
+    .input-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+    }
+    .input-group label {
+      font-weight: 500;
+      margin-right: 0.2em;
+    }
+    input[type="file"] {
+      display: none;
+    }
+    #folderButton, #zipButton {
+      padding: 0.5em 1.2em;
+      font-size: 1em;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background 0.15s;
+      margin-right: 0.5em;
+    }
+    #folderButton:active, #zipButton:active {
+      background: var(--primary-dark);
+    }
+    #status {
+      min-height: 1.5em;
+      margin-bottom: 0.5em;
+      color: #555;
+      font-size: 1em;
+    }
+    #status.error {
+      color: var(--error);
+      font-weight: 600;
+    }
+    #output {
+      width: 100%;
+      min-height: 320px;
+      font-family: var(--font-mono);
+      font-size: 1em;
+      padding: 1em;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #f4f4f4;
+      resize: vertical;
+      margin-bottom: 1em;
+      box-sizing: border-box;
+      color: #222;
+    }
+    #copyButton {
+      display: inline-block;
+      padding: 0.6em 1.5em;
+      font-size: 1em;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background 0.15s;
+      margin-top: 0.2em;
+      align-self: flex-end;
+    }
+    #copyButton:active {
+      background: var(--primary-dark);
+    }
+    @media (max-width: 900px) {
+      main {
+        padding: 1.2rem 0.7rem 1.5rem 0.7rem;
+      }
+    }
+    @media (max-width: 600px) {
+      header {
+        padding: 1.2rem 0 0.7rem 0;
+      }
+      header h1 {
+        font-size: 1.3rem;
+      }
+      main {
+        padding: 0.7rem 0.2rem 1rem 0.2rem;
+      }
+      section#tool-interface {
+        padding: 0.7rem 0.3rem 0.7rem 0.3rem;
+      }
+      .controls {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.7em;
+      }
+      .input-group {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.2em;
+      }
+      #output {
+        font-size: 0.93em;
+      }
+      #copyButton {
+        width: 100%;
+        align-self: stretch;
+      }
+    }
+    footer {
+      text-align: center;
+      color: #888;
+      font-size: 0.98em;
+      margin: 2.5rem 0 1.2rem 0;
+      padding-top: 0.7em;
+      border-top: 1px solid #e0e0e0;
+      letter-spacing: 0.01em;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ContextPack</h1>
+  </header>
+  <main>
+    <section id="intro">
+      <p>
+        <strong>ContextPack</strong> is a free, client-side tool that transforms the contents of a ZIP file or a local folder into a single, flat text block. This makes it easy to provide project context to Large Language Models (LLMs) and AI coding assistants.
+      </p>
+      <h2>Why use ContextPack?</h2>
+      <ul>
+        <li><strong>LLM/AI Prompting:</strong> Quickly package your codebase or documentation for use as context in LLMs or AI coding assistants.</li>
+        <li><strong>Documentation & Analysis:</strong> Generate a single text file for documentation, code review, or text analysis tools.</li>
+        <li><strong>Version Comparison:</strong> Compare the textual content of different codebase versions easily.</li>
+        <li><strong>Privacy & Speed:</strong> All processing is done in your browser—no files are uploaded to any server.</li>
+      </ul>
+      <h2>How to use ContextPack</h2>
+      <ul>
+        <li>Choose <strong>Select ZIP File</strong> to upload a <code>.zip</code> archive, or <strong>Select Folder</strong> to process a local folder (including subfolders).</li>
+        <li>Optionally, check <strong>Include non-text files (as Base64)</strong> to include binary files (e.g., images) as Base64 strings. Leave unchecked to skip them.</li>
+        <li>Wait for processing. The output will appear below in a large text area.</li>
+        <li>Click <strong>Copy to Clipboard</strong> to copy the result for use in LLM prompts or elsewhere.</li>
+      </ul>
+    </section>
+    <section id="tool-interface">
+      <div class="controls">
+        <div class="input-group">
+          <button id="zipButton" type="button">Select ZIP File</button>
+          <input type="file" id="zipInput" accept=".zip">
+        </div>
+        <div class="input-group">
+          <button id="folderButton" type="button">Select Folder</button>
+          <input type="file" id="folderInput" webkitdirectory directory multiple>
+        </div>
+        <label for="includeBinary" style="margin-left:1em;">
+          <input type="checkbox" id="includeBinary">
+          Include non-text files (as Base64)
+        </label>
+      </div>
+      <div id="status">Select a ZIP file or a Folder to begin.</div>
+      <textarea id="output" readonly placeholder="Output will appear here..."></textarea>
+      <button id="copyButton">Copy to Clipboard</button>
+    </section>
+  </main>
+  <footer>
+    &copy; 2025 ContextPack &mdash; All processing is client-side. No files are uploaded.
+  </footer>
+  <script>
+    // --- File extension lists ---
+    const TEXT_EXTENSIONS = [
+      '.txt', '.js', '.ts', '.py', '.java', '.cs', '.html', '.css', '.scss', '.json', '.xml',
+      '.yaml', '.yml', '.md', '.rst', '.csv', '.tsv', '.sh', '.bat', '.c', '.cpp', '.h', '.hpp',
+      '.go', '.rb', '.php', '.pl', '.swift', '.kt', '.dart', '.ini', '.conf', '.toml', '.properties'
+    ];
+    const BINARY_EXTENSIONS = [
+      '.png', '.jpg', '.jpeg', '.gif', '.webp', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+      '.zip', '.gz', '.tar', '.exe', '.dll', '.so', '.o', '.class', '.pyc', '.wasm', '.ttf', '.otf',
+      '.woff', '.woff2', '.mp3', '.mp4', '.avi', '.mov', '.flac', '.mkv', '.ico', '.bmp', '.7z', '.rar'
+    ];
+
+    // --- DOM Elements ---
+    const zipInput = document.getElementById('zipInput');
+    const zipButton = document.getElementById('zipButton');
+    const folderInput = document.getElementById('folderInput');
+    const folderButton = document.getElementById('folderButton');
+    const includeBinary = document.getElementById('includeBinary');
+    const statusDiv = document.getElementById('status');
+    const outputArea = document.getElementById('output');
+    const copyButton = document.getElementById('copyButton');
+
+    // --- State: track last input type for reprocessing ---
+    let lastInputType = null; // "zip" or "folder"
+    let lastZipFile = null;
+    let lastFolderFiles = null;
+
+    // --- Utility: File extension extraction ---
+    function getExtension(filename) {
+      const idx = filename.lastIndexOf('.');
+      return idx !== -1 ? filename.slice(idx).toLowerCase() : '';
+    }
+
+    function isTextFile(filename) {
+      const ext = getExtension(filename);
+      if (TEXT_EXTENSIONS.includes(ext)) return true;
+      if (BINARY_EXTENSIONS.includes(ext)) return false;
+      // Heuristic: treat files with no extension or unknown as text
+      return true;
+    }
+
+    // --- Status update helper ---
+    function updateStatus(msg, isError = false) {
+      statusDiv.textContent = msg;
+      statusDiv.className = isError ? 'error' : '';
+    }
+
+    // --- Output formatting helper ---
+    function formatFileBlock(path, content) {
+      return `File: ${path}\n-----------------\n${content}\n-----------------\n\n`;
+    }
+
+    // --- ZIP input handling ---
+    zipButton.addEventListener('click', () => zipInput.click());
+    zipInput.addEventListener('change', async function(event) {
+      const file = event.target.files[0];
+      outputArea.value = '';
+      if (!file) {
+        updateStatus('No file selected.');
+        return;
+      }
+      if (!file.name.toLowerCase().endsWith('.zip')) {
+        updateStatus('Please select a .zip file.', true);
+        return;
+      }
+      updateStatus('Processing ZIP...');
+      lastInputType = "zip";
+      lastZipFile = file;
+      lastFolderFiles = null;
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        await processZip(arrayBuffer);
+      } catch (err) {
+        updateStatus('Error reading ZIP file: ' + err.message, true);
+      }
+    });
+
+    async function processZip(arrayBuffer) {
+      let zip;
+      try {
+        zip = await JSZip.loadAsync(arrayBuffer);
+      } catch (err) {
+        updateStatus('Failed to open ZIP archive: ' + err.message, true);
+        return;
+      }
+      const entries = [];
+      zip.forEach((relativePath, zipEntry) => {
+        if (!zipEntry.dir) entries.push({ relativePath, zipEntry });
+      });
+      if (entries.length === 0) {
+        updateStatus('No files found in ZIP archive.', true);
+        return;
+      }
+      const includeBin = includeBinary.checked;
+      let output = '';
+      let errorCount = 0;
+      for (const { relativePath, zipEntry } of entries) {
+        try {
+          const isText = isTextFile(relativePath);
+          let content;
+          if (isText) {
+            content = await zipEntry.async('string');
+          } else if (includeBin) {
+            content = await zipEntry.async('base64');
+          } else {
+            continue; // skip binary if not included
+          }
+          output += formatFileBlock(relativePath, content);
+        } catch (err) {
+          errorCount++;
+          output += formatFileBlock(relativePath, `[Error reading file: ${err.message}]`);
+        }
+      }
+      outputArea.value = output.trim();
+      if (errorCount > 0) {
+        updateStatus(`Done! Output generated below. (${errorCount} file(s) had errors)`);
+      } else {
+        updateStatus('Done! Output generated below.');
+      }
+    }
+
+    // --- Folder input handling ---
+    folderButton.addEventListener('click', () => folderInput.click());
+    folderInput.addEventListener('change', async function(event) {
+      const files = Array.from(event.target.files);
+      outputArea.value = '';
+      if (!files.length) {
+        updateStatus('No folder selected.');
+        return;
+      }
+      updateStatus('Processing Folder...');
+      lastInputType = "folder";
+      lastFolderFiles = files;
+      lastZipFile = null;
+      try {
+        await processFolder(files);
+      } catch (err) {
+        updateStatus('Error processing folder: ' + err.message, true);
+      }
+    });
+
+    async function processFolder(files) {
+      const includeBin = includeBinary.checked;
+      let output = '';
+      let errorCount = 0;
+      for (const file of files) {
+        // Skip directories (should not appear in FileList, but just in case)
+        if (file.type === "" && file.size === 0) continue;
+        const relativePath = file.webkitRelativePath || file.name;
+        const isText = isTextFile(relativePath);
+        try {
+          let content;
+          if (isText) {
+            content = await readFileAsText(file);
+          } else if (includeBin) {
+            content = await readFileAsBase64(file);
+          } else {
+            continue; // skip binary if not included
+          }
+          output += formatFileBlock(relativePath, content);
+        } catch (err) {
+          errorCount++;
+          output += formatFileBlock(relativePath, `[Error reading file: ${err.message}]`);
+        }
+      }
+      outputArea.value = output.trim();
+      if (errorCount > 0) {
+        updateStatus(`Done! Output generated below. (${errorCount} file(s) had errors)`);
+      } else {
+        updateStatus('Done! Output generated below.');
+      }
+    }
+
+    // --- FileReader Promises for folder files ---
+    function readFileAsText(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error || new Error("Unknown error reading file as text"));
+        reader.readAsText(file);
+      });
+    }
+    function readFileAsBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          // DataURL: "data:...;base64,...."
+          const result = reader.result;
+          const base64 = result.split(',')[1] || '';
+          resolve(base64);
+        };
+        reader.onerror = () => reject(reader.error || new Error("Unknown error reading file as Base64"));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // --- Copy to clipboard ---
+    copyButton.addEventListener('click', async function() {
+      if (!outputArea.value) {
+        updateStatus('Nothing to copy.', true);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(outputArea.value);
+        updateStatus('Copied to clipboard!');
+      } catch (err) {
+        updateStatus('Failed to copy: ' + err.message, true);
+      }
+    });
+
+    // --- Checkbox change triggers reprocessing if a file/folder is loaded ---
+    includeBinary.addEventListener('change', async function() {
+      if (lastInputType === "zip" && lastZipFile) {
+        updateStatus('Reprocessing ZIP...');
+        try {
+          const arrayBuffer = await lastZipFile.arrayBuffer();
+          await processZip(arrayBuffer);
+        } catch (err) {
+          updateStatus('Error reprocessing ZIP: ' + err.message, true);
+        }
+      } else if (lastInputType === "folder" && lastFolderFiles) {
+        updateStatus('Reprocessing Folder...');
+        try {
+          await processFolder(lastFolderFiles);
+        } catch (err) {
+          updateStatus('Error reprocessing folder: ' + err.message, true);
+        }
+      }
+    });
+  </script>
+</body>
+</html>
