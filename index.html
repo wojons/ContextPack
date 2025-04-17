@@ -131,7 +131,15 @@
       box-sizing: border-box;
       color: #222;
     }
-    #copyButton {
+    .output-actions {
+      display: flex;
+      gap: 1em;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: -0.7em;
+      margin-bottom: 0.2em;
+    }
+    #copyButton, #downloadButton {
       display: inline-block;
       padding: 0.6em 1.5em;
       font-size: 1em;
@@ -142,9 +150,8 @@
       cursor: pointer;
       transition: background 0.15s;
       margin-top: 0.2em;
-      align-self: flex-end;
     }
-    #copyButton:active {
+    #copyButton:active, #downloadButton:active {
       background: var(--primary-dark);
     }
     @media (max-width: 900px) {
@@ -178,9 +185,13 @@
       #output {
         font-size: 0.93em;
       }
-      #copyButton {
+      .output-actions {
+        flex-direction: column;
+        gap: 0.5em;
+        align-items: stretch;
+      }
+      #copyButton, #downloadButton {
         width: 100%;
-        align-self: stretch;
       }
     }
     footer {
@@ -215,7 +226,7 @@
         <li>Choose <strong>Select ZIP File</strong> to upload a <code>.zip</code> archive, or <strong>Select Folder</strong> to process a local folder (including subfolders).</li>
         <li>Optionally, check <strong>Include non-text files (as Base64)</strong> to include binary files (e.g., images) as Base64 strings. Leave unchecked to skip them.</li>
         <li>Wait for processing. The output will appear below in a large text area.</li>
-        <li>Click <strong>Copy to Clipboard</strong> to copy the result for use in LLM prompts or elsewhere.</li>
+        <li>Click <strong>Copy to Clipboard</strong> to copy the result, or <strong>Download Output</strong> to save it as a text file.</li>
       </ul>
     </section>
     <section id="tool-interface">
@@ -235,7 +246,10 @@
       </div>
       <div id="status">Select a ZIP file or a Folder to begin.</div>
       <textarea id="output" readonly placeholder="Output will appear here..."></textarea>
-      <button id="copyButton">Copy to Clipboard</button>
+      <div class="output-actions">
+        <button id="copyButton">Copy to Clipboard</button>
+        <button id="downloadButton">Download Output</button>
+      </div>
     </section>
   </main>
   <footer>
@@ -263,6 +277,7 @@
     const statusDiv = document.getElementById('status');
     const outputArea = document.getElementById('output');
     const copyButton = document.getElementById('copyButton');
+    const downloadButton = document.getElementById('downloadButton');
 
     // --- State: track last input type for reprocessing ---
     let lastInputType = null; // "zip" or "folder"
@@ -450,6 +465,27 @@
       } catch (err) {
         updateStatus('Failed to copy: ' + err.message, true);
       }
+    });
+
+    // --- Download output as file ---
+    downloadButton.addEventListener('click', function() {
+      const text = outputArea.value;
+      if (!text) {
+        updateStatus('Nothing to download.', true);
+        return;
+      }
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'contextpack_output.txt';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+      updateStatus('Download started.');
     });
 
     // --- Checkbox change triggers reprocessing if a file/folder is loaded ---
