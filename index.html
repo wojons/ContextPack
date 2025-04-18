@@ -256,6 +256,13 @@
       return TEXT_EXTENSIONS.some(ext => lower.endsWith(ext));
     }
 
+    // --- Store original input name for download ---
+    let originalInputName = "contextpack";
+    function sanitizeName(name) {
+      // Remove .zip extension, replace spaces with underscores, remove trailing slashes
+      return name.replace(/\.zip$/i, '').replace(/\s+/g, '_').replace(/\/+$/, '');
+    }
+
     // --- DOM references ---
     const zipInput = document.getElementById('zipInput');
     const folderInput = document.getElementById('folderInput');
@@ -321,6 +328,8 @@
         updateStatus('Please select a valid .zip file.', true);
         return;
       }
+      // Store sanitized ZIP name (without .zip)
+      originalInputName = sanitizeName(file.name);
       updateStatus('Reading ZIP file...');
       try {
         const arrayBuffer = await file.arrayBuffer();
@@ -375,6 +384,12 @@
       resetUI();
       const files = Array.from(e.target.files);
       if (!files.length) return;
+      // Derive root folder name from first file's webkitRelativePath
+      let folderName = "contextpack";
+      if (files[0] && files[0].webkitRelativePath) {
+        folderName = files[0].webkitRelativePath.split('/')[0] || "contextpack";
+      }
+      originalInputName = sanitizeName(folderName);
       // Filter out directories (webkitdirectory only provides files)
       const totalFiles = files.length;
       updateProgress(0, totalFiles, 'Preparing...');
@@ -430,7 +445,8 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'contextpack-output.txt';
+      // Use the original input name for the download filename
+      a.download = `${originalInputName}_contextpack.txt`;
       document.body.appendChild(a);
       a.click();
       setTimeout(() => {
