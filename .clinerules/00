@@ -40,3 +40,4 @@
 - Client-Side Only: Reiterate that no data should be sent to any server.
 - Library Source: Prefer using a standard CDN for JSZip unless specifically instructed to bundle.
 - Performance: While not a strict rule, aim for reasonably efficient JS for handling potentially large text content in the browser. (This is more of a guideline).
+
