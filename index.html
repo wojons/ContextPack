@@ -4,9 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <title>ContextPack | Zip/Folder to LLM Context Helper</title>
-  <meta name="description" content="ContextPack: A client-side tool to easily convert ZIP archives or folders into a single text block for LLM context, with progress feedback.">
+  <meta name="description" content="ContextPack: A client-side tool to convert ZIP archives or folders into a single text block for LLM context, with interactive file selection and statistics via jsTree.">
   <link rel="icon" href="data:,">
-  <!-- JSZip CDN -->
+  <!-- jQuery (required for jsTree) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <!-- jsTree CSS/JS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jstree/3.3.15/themes/default/style.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jstree/3.3.15/jstree.min.js"></script>
+  <!-- JSZip -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
     :root {
@@ -39,7 +44,7 @@
       letter-spacing: 1px;
     }
     main {
-      max-width: 700px;
+      max-width: 800px;
       margin: 2rem auto 0 auto;
       background: #fff;
       border-radius: 12px;
@@ -97,6 +102,57 @@
       align-items: center;
       gap: 0.5em;
       margin-top: 0.2em;
+    }
+    #statsContainer {
+      display: none;
+      background: #f8fafc;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      padding: 0.7em 1em 0.7em 1em;
+      margin: 0.5em 0 0.5em 0;
+      font-size: 1.05em;
+      color: var(--accent);
+      flex-wrap: wrap;
+      gap: 1.2em;
+    }
+    #statsContainer span.value {
+      font-weight: bold;
+      color: #222;
+      margin-right: 1.2em;
+    }
+    #fileTreeSection {
+      display: none;
+      flex-direction: column;
+      gap: 0.7em;
+      margin: 1em 0 0.5em 0;
+    }
+    #fileTreeContainer {
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      background: #f8fafc;
+      max-height: 320px;
+      min-height: 80px;
+      overflow-y: auto;
+      padding: 0.7em 1em 0.7em 1em;
+      margin-bottom: 0.5em;
+    }
+    #processButton {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.7em 1.3em;
+      font-size: 1em;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.18s;
+      box-shadow: 0 1px 4px rgba(44,108,223,0.07);
+      margin-bottom: 0.5em;
+    }
+    #processButton:disabled {
+      background: #b3c6e6;
+      color: #fff;
+      cursor: not-allowed;
     }
     #progressArea {
       display: none;
@@ -185,6 +241,14 @@
         min-height: 140px;
         font-size: 0.95em;
       }
+      #fileTreeContainer {
+        max-height: 180px;
+        padding: 0.5em 0.5em 0.5em 0.5em;
+      }
+      #statsContainer {
+        font-size: 0.98em;
+        padding: 0.5em 0.5em 0.5em 0.5em;
+      }
     }
     footer {
       text-align: center;
@@ -212,8 +276,9 @@
       <h2>How to use ContextPack</h2>
       <ol>
         <li>Select either a <strong>ZIP file</strong> or a <strong>folder</strong> using the inputs below.</li>
+        <li>Preview and select files/folders in the interactive file tree.</li>
         <li>Optionally, check "Include non-text files" to Base64-encode and include binary files.</li>
-        <li>Wait for processing (progress is shown).</li>
+        <li>Click "Generate Context Pack from Selection" to process only the checked items.</li>
         <li>Copy or download the output for use in your LLM prompt.</li>
       </ol>
     </section>
@@ -229,6 +294,18 @@
         <input type="checkbox" id="includeBinary">
         <label for="includeBinary">Include non-text files (as Base64)</label>
       </div>
+      <div id="statsContainer">
+        <span>Total Files: <span id="statsTotalFiles" class="value">-</span></span>
+        <span>Total Folders: <span id="statsTotalFolders" class="value">-</span></span>
+        <span>Original Size: <span id="statsOriginalSize" class="value">-</span></span>
+        <span>Selected Files: <span id="statsSelectedFiles" class="value">-</span></span>
+        <span>Selected Folders: <span id="statsSelectedFolders" class="value">-</span></span>
+        <span>Output Size: <span id="statsOutputSize" class="value">-</span></span>
+      </div>
+      <section id="fileTreeSection">
+        <div id="fileTreeContainer"></div>
+        <button id="processButton" type="button" disabled>Generate Context Pack from Selection</button>
+      </section>
       <div id="progressArea">
         <progress id="progressBar" max="100" value="0"></progress>
         <p id="progressText"></p>
@@ -274,6 +351,22 @@
     const output = document.getElementById('output');
     const copyButton = document.getElementById('copyButton');
     const downloadButton = document.getElementById('downloadButton');
+    const fileTreeSection = document.getElementById('fileTreeSection');
+    const fileTreeContainer = document.getElementById('fileTreeContainer');
+    const processButton = document.getElementById('processButton');
+    const statsContainer = document.getElementById('statsContainer');
+    const statsTotalFiles = document.getElementById('statsTotalFiles');
+    const statsTotalFolders = document.getElementById('statsTotalFolders');
+    const statsOriginalSize = document.getElementById('statsOriginalSize');
+    const statsSelectedFiles = document.getElementById('statsSelectedFiles');
+    const statsSelectedFolders = document.getElementById('statsSelectedFolders');
+    const statsOutputSize = document.getElementById('statsOutputSize');
+
+    // --- State ---
+    let currentZip = null; // JSZip instance if ZIP
+    let currentFileMap = {}; // { path: File } for folder input
+    let currentTreeType = null; // "zip" or "folder"
+    let initialStats = { totalFiles: 0, totalFolders: 0, originalSize: 0 };
 
     // --- UI helpers ---
     function updateStatus(msg, isError = false, isSuccess = false) {
@@ -295,6 +388,30 @@
       output.value = '';
       updateStatus('Select a ZIP file or folder to begin.');
       hideProgress();
+      fileTreeSection.style.display = 'none';
+      processButton.disabled = true;
+      statsContainer.style.display = 'none';
+      statsTotalFiles.textContent = '-';
+      statsTotalFolders.textContent = '-';
+      statsOriginalSize.textContent = '-';
+      statsSelectedFiles.textContent = '-';
+      statsSelectedFolders.textContent = '-';
+      statsOutputSize.textContent = '-';
+      if ($ && $.jstree && $(fileTreeContainer).jstree(true)) {
+        $(fileTreeContainer).jstree('destroy');
+      }
+      currentZip = null;
+      currentFileMap = {};
+      currentTreeType = null;
+      initialStats = { totalFiles: 0, totalFolders: 0, originalSize: 0 };
+    }
+    function formatBytes(bytes, decimals = 2) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const dm = decimals < 0 ? 0 : decimals;
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
     }
 
     // --- File reading helpers ---
@@ -310,7 +427,6 @@
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = e => {
-          // e.target.result is a DataURL: "data:...;base64,...."
           const base64 = e.target.result.split(',')[1];
           resolve(base64);
         };
@@ -319,7 +435,7 @@
       });
     }
 
-    // --- ZIP processing ---
+    // --- ZIP input handler ---
     zipInput.addEventListener('change', async (e) => {
       resetUI();
       const file = e.target.files[0];
@@ -328,97 +444,263 @@
         updateStatus('Please select a valid .zip file.', true);
         return;
       }
-      // Store sanitized ZIP name (without .zip)
       originalInputName = sanitizeName(file.name);
       updateStatus('Reading ZIP file...');
       try {
         const arrayBuffer = await file.arrayBuffer();
         const zip = await JSZip.loadAsync(arrayBuffer);
-        await processZip(zip);
+        currentZip = zip;
+        currentTreeType = "zip";
+        // Prepare jsTree data and initial stats
+        const { treeData, stats } = await prepareJsTreeDataFromZip(zip);
+        initialStats = stats;
+        displayFileTree(treeData);
+        updateStatsDisplay('initial', stats);
+        updateStatus('Preview and select files/folders in the tree, then click "Generate Context Pack from Selection".');
       } catch (err) {
         hideProgress();
         updateStatus('Error reading ZIP file: ' + (err.message || err), true);
       }
     });
 
-    async function processZip(zip) {
-      // Filter out directories
-      const fileEntries = Object.entries(zip.files).filter(([path, file]) => !file.dir);
-      const totalFiles = fileEntries.length;
-      if (totalFiles === 0) {
-        updateStatus('No files found in ZIP.', true);
-        return;
-      }
-      updateProgress(0, totalFiles, 'Preparing...');
-      let result = '';
-      let processed = 0;
-      for (const [relativePath, file] of fileEntries) {
-        processed++;
-        updateProgress(processed, totalFiles, relativePath);
-        let content = '';
-        try {
-          if (isTextFile(relativePath)) {
-            content = await file.async('string');
-          } else if (includeBinary.checked) {
-            const base64 = await file.async('base64');
-            content = base64;
-          } else {
-            continue; // skip binary file
-          }
-        } catch (err) {
-          content = '[Error reading file: ' + (err.message || err) + ']';
-        }
-        result += `File: ${relativePath}\n-----------------\n${content}\n-----------------\n\n`;
-      }
-      hideProgress();
-      output.value = result.trim();
-      if (result) {
-        updateStatus('Done! Output generated below.', false, true);
-      } else {
-        updateStatus('No files were included in the output.', true);
-      }
-    }
-
-    // --- Folder processing ---
+    // --- Folder input handler ---
     folderInput.addEventListener('change', async (e) => {
       resetUI();
       const files = Array.from(e.target.files);
       if (!files.length) return;
-      // Derive root folder name from first file's webkitRelativePath
       let folderName = "contextpack";
       if (files[0] && files[0].webkitRelativePath) {
         folderName = files[0].webkitRelativePath.split('/')[0] || "contextpack";
       }
       originalInputName = sanitizeName(folderName);
-      // Filter out directories (webkitdirectory only provides files)
-      const totalFiles = files.length;
-      updateProgress(0, totalFiles, 'Preparing...');
+      // Build a map for quick lookup
+      currentFileMap = {};
+      for (const file of files) {
+        currentFileMap[file.webkitRelativePath] = file;
+      }
+      currentTreeType = "folder";
+      // Prepare jsTree data and initial stats
+      const { treeData, stats } = prepareJsTreeDataFromFolder(files);
+      initialStats = stats;
+      displayFileTree(treeData);
+      updateStatsDisplay('initial', stats);
+      updateStatus('Preview and select files/folders in the tree, then click "Generate Context Pack from Selection".');
+    });
+
+    // --- jsTree data preparation for ZIP ---
+    async function prepareJsTreeDataFromZip(zip) {
+      const nodes = [];
+      const seen = new Set();
+      let totalFiles = 0, totalFolders = 0, originalSize = 0;
+      function ensureFolderNodes(path) {
+        const parts = path.split('/');
+        let parent = "#";
+        let currPath = "";
+        for (let i = 0; i < parts.length - 1; i++) {
+          currPath = currPath ? currPath + "/" + parts[i] : parts[i];
+          if (!seen.has(currPath)) {
+            nodes.push({
+              id: currPath,
+              parent: parent,
+              text: parts[i],
+              icon: "jstree-folder",
+              state: { selected: true },
+              data: { type: "folder" }
+            });
+            seen.add(currPath);
+            totalFolders++;
+          }
+          parent = currPath;
+        }
+        return parent;
+      }
+      for (const [path, file] of Object.entries(zip.files)) {
+        if (file.dir) {
+          if (!seen.has(path.replace(/\/$/, ''))) {
+            const parent = ensureFolderNodes(path);
+            nodes.push({
+              id: path.replace(/\/$/, ''),
+              parent: parent,
+              text: path.split('/').filter(Boolean).pop(),
+              icon: "jstree-folder",
+              state: { selected: true },
+              data: { type: "folder" }
+            });
+            seen.add(path.replace(/\/$/, ''));
+            totalFolders++;
+          }
+        } else {
+          const parent = ensureFolderNodes(path);
+          let size = file._data && file._data.uncompressedSize ? file._data.uncompressedSize : (file._data && file._data.length ? file._data.length : 0);
+          // JSZip doesn't always expose uncompressedSize, so we try to estimate or set 0
+          nodes.push({
+            id: path,
+            parent: parent,
+            text: path.split('/').pop(),
+            icon: "jstree-file",
+            state: { selected: true },
+            data: { path: path, type: "file", size: size }
+          });
+          totalFiles++;
+          originalSize += size;
+        }
+      }
+      return { treeData: nodes, stats: { totalFiles, totalFolders, originalSize } };
+    }
+
+    // --- jsTree data preparation for Folder ---
+    function prepareJsTreeDataFromFolder(files) {
+      const nodes = [];
+      const seen = new Set();
+      let totalFiles = 0, totalFolders = 0, originalSize = 0;
+      for (const file of files) {
+        const relPath = file.webkitRelativePath;
+        const parts = relPath.split('/');
+        let parent = "#";
+        let currPath = "";
+        for (let i = 0; i < parts.length - 1; i++) {
+          currPath = currPath ? currPath + "/" + parts[i] : parts[i];
+          if (!seen.has(currPath)) {
+            nodes.push({
+              id: currPath,
+              parent: parent,
+              text: parts[i],
+              icon: "jstree-folder",
+              state: { selected: true },
+              data: { type: "folder" }
+            });
+            seen.add(currPath);
+            totalFolders++;
+          }
+          parent = currPath;
+        }
+        nodes.push({
+          id: relPath,
+          parent: parent,
+          text: parts[parts.length - 1],
+          icon: "jstree-file",
+          state: { selected: true },
+          data: { path: relPath, type: "file", size: file.size }
+        });
+        totalFiles++;
+        originalSize += file.size;
+      }
+      return { treeData: nodes, stats: { totalFiles, totalFolders, originalSize } };
+    }
+
+    // --- jsTree display and setup ---
+    function displayFileTree(treeData) {
+      if ($.jstree.reference(fileTreeContainer)) {
+        $(fileTreeContainer).jstree('destroy');
+      }
+      $(fileTreeContainer).jstree({
+        core: {
+          data: treeData,
+          themes: { stripes: true }
+        },
+        plugins: ["checkbox"],
+        checkbox: {
+          three_state: true,
+          cascade: "down+up",
+          tie_selection: true,
+          whole_node: false
+        }
+      });
+      fileTreeSection.style.display = 'flex';
+      processButton.disabled = false;
+      // Collapse all nodes after ready
+      $(fileTreeContainer).on('ready.jstree', function() {
+        $(fileTreeContainer).jstree('close_all');
+      });
+    }
+
+    // --- Update statistics display ---
+    function updateStatsDisplay(stage, stats) {
+      if (stage === 'initial') {
+        statsTotalFiles.textContent = stats.totalFiles;
+        statsTotalFolders.textContent = stats.totalFolders;
+        statsOriginalSize.textContent = formatBytes(stats.originalSize);
+        statsSelectedFiles.textContent = '-';
+        statsSelectedFolders.textContent = '-';
+        statsOutputSize.textContent = '-';
+        statsContainer.style.display = 'flex';
+      } else if (stage === 'selection') {
+        statsSelectedFiles.textContent = stats.selectedFiles;
+        statsSelectedFolders.textContent = stats.selectedFolders;
+      } else if (stage === 'output') {
+        statsOutputSize.textContent = formatBytes(stats.outputSize);
+      }
+    }
+
+    // --- Process selected files from jsTree ---
+    processButton.addEventListener('click', async () => {
+      processButton.disabled = true;
+      output.value = '';
+      hideProgress();
+      updateStatus('Processing selected files...');
+      let selectedNodes = $(fileTreeContainer).jstree(true).get_selected(true);
+      // Count selected files and folders
+      let selectedFiles = 0, selectedFolders = 0;
+      let fileNodes = [];
+      for (const node of selectedNodes) {
+        if (node.data && node.data.type === "file") {
+          selectedFiles++;
+          fileNodes.push(node);
+        } else if (node.data && node.data.type === "folder") {
+          selectedFolders++;
+        }
+      }
+      updateStatsDisplay('selection', { selectedFiles, selectedFolders });
+      if (!fileNodes.length) {
+        updateStatus('No files selected. Please select files in the tree.', true);
+        processButton.disabled = false;
+        return;
+      }
+      const totalFiles = fileNodes.length;
       let result = '';
       let processed = 0;
-      for (const file of files) {
+      for (const node of fileNodes) {
         processed++;
-        updateProgress(processed, totalFiles, file.webkitRelativePath || file.name);
+        updateProgress(processed, totalFiles, node.data.path);
         let content = '';
         try {
-          if (isTextFile(file.name)) {
-            content = await readFileAsText(file);
-          } else if (includeBinary.checked) {
-            content = await readFileAsBase64(file);
-          } else {
-            continue; // skip binary file
+          if (currentTreeType === "zip") {
+            const fileObj = currentZip.file(node.data.path);
+            if (!fileObj) {
+              content = '[File not found in ZIP]';
+            } else if (isTextFile(node.data.path)) {
+              content = await fileObj.async('string');
+            } else if (includeBinary.checked) {
+              content = await fileObj.async('base64');
+            } else {
+              continue; // skip binary file
+            }
+          } else if (currentTreeType === "folder") {
+            const fileObj = currentFileMap[node.data.path];
+            if (!fileObj) {
+              content = '[File not found in folder]';
+            } else if (isTextFile(node.data.path)) {
+              content = await readFileAsText(fileObj);
+            } else if (includeBinary.checked) {
+              content = await readFileAsBase64(fileObj);
+            } else {
+              continue; // skip binary file
+            }
           }
         } catch (err) {
           content = '[Error reading file: ' + (err.message || err) + ']';
         }
-        result += `File: ${file.webkitRelativePath || file.name}\n-----------------\n${content}\n-----------------\n\n`;
+        result += `File: ${node.data.path}\n-----------------\n${content}\n-----------------\n\n`;
       }
       hideProgress();
       output.value = result.trim();
+      updateStatsDisplay('output', { outputSize: result.length });
       if (result) {
         updateStatus('Done! Output generated below.', false, true);
       } else {
         updateStatus('No files were included in the output.', true);
       }
+      processButton.disabled = false;
     });
 
     // --- Copy to clipboard ---
@@ -445,7 +727,6 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      // Use the original input name for the download filename
       a.download = `${originalInputName}_contextpack.txt`;
       document.body.appendChild(a);
       a.click();
@@ -470,9 +751,11 @@
 
     // --- Reset UI if checkbox is toggled ---
     includeBinary.addEventListener('change', () => {
-      // No auto re-processing; user must re-select file/folder to re-run with new setting
       updateStatus('Re-select ZIP or folder to apply new binary file setting.');
     });
+
+    // --- Initial UI state ---
+    resetUI();
   </script>
 </body>
 </html>
